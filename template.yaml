@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Employee Management System
+
+Globals:
+  Function:
+    Timeout: 3
+
+Resources:
+  EmployeeApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: EmployeeApi
+      StageName: Prod
+      Cors:
+        AllowMethods: "'POST, GET, OPTIONS, PUT'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      EndpointConfiguration:
+        Type: REGIONAL
+
+  PostEmployee:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: PostEmployee
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Handler: index.handler
+      CodeUri: ./post-item-lambda
+      Events:
+        EmployeeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref EmployeeApi
+            Path: /employee
+            Method: POST
+
+  GetEmployee:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: GetEmployee
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Handler: index.handler
+      CodeUri: ./get-item-lambda
+      Events:
+        EmployeeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref EmployeeApi
+            Path: /employee
+            Method: GET
+
+  UpdateEmployee:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: UpdateEmployee
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Handler: index.handler
+      CodeUri: ./update-item-lambda
+      Events:
+        EmployeeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref EmployeeApi
+            Path: /employee
+            Method: PUT
+
+  DeleteEmployee:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: DeleteEmployee
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Handler: index.handler
+      CodeUri: ./delete-item-lambda
+      Events:
+        EmployeeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref EmployeeApi
+            Path: /employee
+            Method: DELETE
+
+  Employee:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Employee
+      KeySchema:
+        - AttributeName: EmpId
+          KeyType: HASH
+        - AttributeName: Department
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: EmpId
+          AttributeType: N
+        - AttributeName: Department
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  Department:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Department
+      KeySchema:
+        - AttributeName: Department
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: Department
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+
+  Tax:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Tax
+      KeySchema:
+        - AttributeName: EmpId
+          KeyType: HASH
+        - AttributeName: Department
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: EmpId
+          AttributeType: N
+        - AttributeName: Department
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+
+  TaxCalculator:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: TaxCalculator
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Handler: index.handler
+      CodeUri: ./tax-calculator-lambda
+      Events:
+        Employee:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt Employee.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 3
+            MaximumRetryAttempts: 2
+            MaximumRecordAgeInSeconds: 180
+            MaximumBatchingWindowInSeconds: 60
+            BisectBatchOnFunctionError: false
+            Enabled: true
+            FilterCriteria:
+              Filters:
+                - Pattern: '{ "dynamodb" : { "NewImage" : { "Taxable" : { "BOOL" : [ true ] } } } }'
+                - Pattern: '{ "dynamodb" : { "OldImage" : { "Taxable" : { "BOOL" : [ true ] } } } }'
+
+  DepartmentManager:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: DepartmentManager
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Handler: index.handler
+      CodeUri: ./department-manager-lambda
+      Events:
+        Employee:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt Employee.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 3
+            MaximumRetryAttempts: 2
+            MaximumRecordAgeInSeconds: 180
+            MaximumBatchingWindowInSeconds: 60
+            BisectBatchOnFunctionError: false
+            Enabled: true
+            # ParallelizationFactor: 1 // default is 1
+
+Outputs:
+  EmployeeApi:
+    Description: "API Gateway endpoint URL for Prod stage for EmployeeApi function"
+    Value: !Sub "https://${EmployeeApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  PostEmployeeLambda:
+    Description: "PostEmployee Lambda Function ARN"
+    Value: !GetAtt PostEmployee.Arn
+  GetEmployeeLambda:
+    Description: "GetEmployee Lambda Function ARN"
+    Value: !GetAtt GetEmployee.Arn
+  UpdateEmployeeLambda:
+    Description: "UpdateEmployee Lambda Function ARN"
+    Value: !GetAtt UpdateEmployee.Arn
+  DeleteEmployeeLambda:
+    Description: "DeleteEmployee Lambda Function ARN"
+    Value: !GetAtt DeleteEmployee.Arn
+  Employee:
+    Description: "Employee DynamoDB Table Arn"
+    Value: !GetAtt Employee.Arn
+  Department:
+    Description: "Department DynamoDB Table Arn"
+    Value: !GetAtt Department.Arn
+  Tax:
+    Description: "Tax DynamoDB Table Arn"
+    Value: !GetAtt Tax.Arn
+  TaxCalculatorLambda:
+    Description: "TaxCalculator Lambda Function ARN"
+    Value: !GetAtt TaxCalculator.Arn
+  DepartmentManagerLambda:
+    Description: "DepartmentManager Lambda Function ARN"
+    Value: !GetAtt DepartmentManager.Arn

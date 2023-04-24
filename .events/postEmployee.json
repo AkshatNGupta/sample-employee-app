@@ -1,0 +1,9 @@
+{
+  "body": {
+    "empid": 3721,
+    "name": "John Doe",
+    "salary": 100000,
+    "department": "IT",
+    "age": 30
+  }
+}
